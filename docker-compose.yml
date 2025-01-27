@@ -1,0 +1,24 @@
+services:
+  scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: olx_scraper
+    depends_on:
+      - db
+    env_file: .env
+    volumes:
+      - .:/app
+    command: ["/app/wait-for-postgres.sh", "db", "scrapy", "crawl", "olx"]
+
+  db:
+    image: postgres:15
+    container_name: postgres_db
+    env_file: .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres_data:

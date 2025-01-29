@@ -87,22 +87,34 @@ class PostgresPipeline:
     def process_item(self, item, spider):
         try:
             adapter = ItemAdapter(item)
+
+            ad_id = adapter.get('ad_id')
+            if not ad_id:
+                spider.logger.warning("Item does not have a valid ad_id. Skipping insert.")
+                return item
+
+            # Checking if the ad_id is in the database
+            self.cursor.execute("SELECT EXISTS(SELECT 1 FROM ads WHERE ad_id = %s)", (ad_id,))
+            if self.cursor.fetchone()[0]:
+                spider.logger.info(f"Item with ID {ad_id} already exists. Skipping insert.")
+                return item
+
             data = (
-                adapter.get('ad_id'),
-                adapter.get('title'),
-                adapter.get('price'),
-                adapter.get('user_name'),
-                adapter.get('phone_number'),
-                adapter.get('user_score'),
-                adapter.get('user_registration'),
-                adapter.get('user_last_seen'),
-                adapter.get('ad_view_counter'),
-                adapter.get('location'),
-                adapter.get('ad_pub_date'),
+                adapter.get('ad_id') or 'unknown',
+                adapter.get('title') or 'No Title',
+                adapter.get('price') or '0',
+                adapter.get('user_name') or 'Anonymous',
+                adapter.get('phone_number') or 'N/A',
+                adapter.get('user_score') or 'N/A',
+                adapter.get('user_registration') or 'Unknown',
+                adapter.get('user_last_seen') or 'Unknown',
+                adapter.get('ad_view_counter') or '0',
+                adapter.get('location') or 'Unknown',
+                adapter.get('ad_pub_date') or 'Unknown',
                 adapter.get('url'),
-                adapter.get('description'),
-                adapter.get('ad_tags'),
-                adapter.get('img_src_list'),
+                adapter.get('description') or 'No Description',
+                adapter.get('ad_tags') or [],
+                adapter.get('img_src_list') or [],
 
             )
 
@@ -119,10 +131,10 @@ class PostgresPipeline:
             return item
 
         except psycopg2.Error as e:
-            spider.logger.error(f"Error saving item to PostgreSQL: {e}")
+            spider.logger.error(f"Database error while saving item: {e}")
             self.conn.rollback()
-            raise
+            return item
 
         except Exception as e:
             spider.logger.error(f"Unexpected error in process_item: {e}")
-            raise
+            return item

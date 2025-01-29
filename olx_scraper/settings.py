@@ -8,6 +8,9 @@ from decouple import config
 # Disable default Scrapy log settings.
 configure_logging(install_root_handler=False)
 
+START_PAGE = 1
+END_PAGE = 5
+
 # === Basic Scrapy setting ===
 BOT_NAME = "olx_scraper"  # Project name Scrapy
 SPIDER_MODULES = ["olx_scraper.spiders"]  # way to the modules with spiders

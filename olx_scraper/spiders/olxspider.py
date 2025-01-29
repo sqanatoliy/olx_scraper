@@ -16,6 +16,7 @@ from .playwright_helpers import (
     scroll_and_click_to_show_phone,
     wait_for_number_of_views,
 )
+from ..pipelines import PostgresPipeline
 
 # ADS LIST PAGE
 ADS_BLOCK_SELECTOR = 'div[data-testid="l-card"]'
@@ -56,9 +57,29 @@ class OlxSpider(scrapy.Spider):
 
     name = "olx"
     allowed_domains: list[str] = ["olx.ua"]
-    start_urls: list[str] = [
-        f"https://www.olx.ua/uk/list/?page={i}" for i in range(1, 6)
-    ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.db_pipeline = None
+
+    def open_spider(self, spider):
+        """Отримуємо екземпляр `PostgresPipeline`"""
+        for pipeline in spider.crawler.engine.scraper.itemproc.pipelines:
+            if isinstance(pipeline, PostgresPipeline):
+                self.db_pipeline = pipeline
+                break
+
+    @classmethod
+    def from_crawler(cls, crawler, *args, **kwargs):
+        """Scrapy passes a `crawler` here to give access to the `settings`"""
+        spider = super().from_crawler(crawler, *args, **kwargs)
+        # Get value from settings.py
+        spider.start_page = crawler.settings.getint("START_PAGE", 1)
+        spider.end_page = crawler.settings.getint("END_PAGE", 6)
+        spider.start_urls = [
+            f"https://www.olx.ua/uk/list/?page={i}" for i in range(spider.start_page, spider.end_page + 1)
+        ]
+        return spider
 
     def start_requests(self) -> Iterator[scrapy.Request]:
         """Override start_requests to include Playwright meta"""
@@ -104,60 +125,65 @@ class OlxSpider(scrapy.Spider):
             ad_link: str | None = (
                 ad.css(AD_TITLE_URL_SELECTOR).css("::attr(href)").get()
             )
+            if not ad_link:
+                continue
             ad_title: str | None = ad.css(AD_TITLE_SELECTOR).css("::text").get()
             ad_price: str | None = ad.css(AD_PRICE_SELECTOR).css("::text").get()
-            if ad_link and ad_title:
-                full_url: str = response.urljoin(ad_link)
-                if "/d/uk/" not in full_url:
-                    full_url = full_url.replace("/d/", "/d/uk/")
-                self.logger.info(f"Collected URL: {full_url}")
-                # Create Item and fill fields
-                item: OlxScraperItem = OlxScraperItem()
-                item["title"] = ad_title.strip()
-                item["price"] = ad_price.strip() if ad_price else None
-                item["url"] = full_url.strip()
-                yield scrapy.Request(
-                    url=full_url,
-                    callback=self.parse_ad,
-                    meta={
-                        "item": item,
-                        "playwright": True,
-                        "playwright_include_page": True,
-                        "playwright_context": "new",
-                        "playwright_context_kwargs": {
-                            "ignore_https_errors": True,
-                            "viewport": {"width": 1980, "height": 1020},
-                            "locale": "uk-UA",
-                            "timezone_id": "Europe/Kiev",
-                            # "proxy": {
-                            #     "server": "http://proxy.toolip.io:31114",
-                            #     "username": "tl-d8582f18f76fecabd2f916e4bd0df4cf63c9f54cd0c1b3d14529591b9ffac8c7-country-us-session-c9166",
-                            #     "password": "t6yqmxldm870",
-                            # },
-                        },
-                        "playwright_page_methods": [
-                            PageMethod(check_403_error, full_url, self),
-                            PageMethod(
-                                scroll_to_number_of_views,
-                                FOOTER_BAR_SELECTOR,
-                                USER_NAME_SELECTOR,
-                                DESCRIPTION_PARTS_SELECTOR,
-                                self,
-                            ),
-                            PageMethod(
-                                "wait_for_load_state",
-                                "domcontentloaded",
-                                timeout=10_000,
-                            ),
-                            PageMethod(
-                                wait_for_number_of_views,
-                                AD_VIEW_COUNTER_SELECTOR,
-                                self,
-                            ),
-                        ],
+            full_url: str = response.urljoin(ad_link)
+            if "/d/uk/" not in full_url:
+                full_url = full_url.replace("/d/", "/d/uk/")
+            # Check in the database through `PostgresPipeline`
+            if self.db_pipeline and self.db_pipeline.is_ad_in_db(full_url):
+                self.logger.info(f"Skipping already processed ad: {full_url}")
+                continue
+            self.logger.info(f"Collected URL: {full_url}")
+            # Create Item and fill fields
+            item: OlxScraperItem = OlxScraperItem()
+            item["title"] = ad_title.strip()
+            item["price"] = ad_price.strip() if ad_price else None
+            item["url"] = full_url.strip()
+            yield scrapy.Request(
+                url=full_url,
+                callback=self.parse_ad,
+                meta={
+                    "item": item,
+                    "playwright": True,
+                    "playwright_include_page": True,
+                    "playwright_context": "new",
+                    "playwright_context_kwargs": {
+                        "ignore_https_errors": True,
+                        "viewport": {"width": 1980, "height": 1020},
+                        "locale": "uk-UA",
+                        "timezone_id": "Europe/Kiev",
+                        # "proxy": {
+                        #     "server": "http://proxy.toolip.io:31114",
+                        #     "username": "tl-d8582f18f76fecabd2f916e4bd0df4cf63c9f54cd0c1b3d14529591b9ffac8c7-country-us-session-c9166",
+                        #     "password": "t6yqmxldm870",
+                        # },
                     },
-                    errback=self.errback_close_page,
-                )
+                    "playwright_page_methods": [
+                        PageMethod(check_403_error, full_url, self),
+                        PageMethod(
+                            scroll_to_number_of_views,
+                            FOOTER_BAR_SELECTOR,
+                            USER_NAME_SELECTOR,
+                            DESCRIPTION_PARTS_SELECTOR,
+                            self,
+                        ),
+                        PageMethod(
+                            "wait_for_load_state",
+                            "domcontentloaded",
+                            timeout=10_000,
+                        ),
+                        PageMethod(
+                            wait_for_number_of_views,
+                            AD_VIEW_COUNTER_SELECTOR,
+                            self,
+                        ),
+                    ],
+                },
+                errback=self.errback_close_page,
+            )
 
     async def parse_ad(
             self, response: Response

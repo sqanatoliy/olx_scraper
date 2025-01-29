@@ -9,6 +9,7 @@ services:
     env_file: .env
     volumes:
       - .:/app
+    restart: always
     command: ["/app/wait-for-postgres.sh", "db", "scrapy", "crawl", "olx"]
 
   db:

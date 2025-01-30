@@ -182,3 +182,6 @@ pyrightconfig.json
 # logs
 /olx_scraper/logs/
 /ads.json
+dumps/
+logs/
+/logs/

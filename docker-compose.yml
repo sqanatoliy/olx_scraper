@@ -7,10 +7,14 @@ services:
     depends_on:
       - db
     env_file: .env
+    environment:
+      - POSTGRES_URI=db
+      - TZ=Europe/Kiev
     volumes:
       - .:/app
+      - ./dumps:/app/dumps
     restart: always
-    command: ["/app/wait-for-postgres.sh", "db", "scrapy", "crawl", "olx"]
+
 
   db:
     image: postgres:15

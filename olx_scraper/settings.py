@@ -1,91 +1,100 @@
 import logging
+import os
 from scrapy.utils.log import configure_logging
 from logging.handlers import RotatingFileHandler
-import os
 from decouple import config
 
 
-# Disable default Scrapy log settings.
-configure_logging(install_root_handler=False)
-
+# Range of pages of the list of ads (olx.ua/list)
 START_PAGE = 1
-END_PAGE = 5
+END_PAGE = 2
 
 # === Basic Scrapy setting ===
 BOT_NAME = "olx_scraper"  # Project name Scrapy
 SPIDER_MODULES = ["olx_scraper.spiders"]  # way to the modules with spiders
 NEWSPIDER_MODULE = "olx_scraper.spiders"  # way to create new spiders
 
-LOG_LEVEL = "DEBUG"  # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-CONCURRENT_REQUESTS = 1  # Number of concurrent requests
-DOWNLOAD_DELAY = 1  # Delay between requests (in seconds)
+# === Scrapy Performance Settings ===
+CONCURRENT_REQUESTS = 1
+DOWNLOAD_DELAY = 1
 
-PLAYWRIGHT_BROWSER_TYPE = "chromium"  # Type of browser used Playwright
+# === Playwright Settings ===
+PLAYWRIGHT_BROWSER_TYPE = "chromium"
 PLAYWRIGHT_LAUNCH_OPTIONS = {
-    "headless": True,  # Run in headless mode
+    "headless": True,
     "args": ["--no-sandbox", "--disable-setuid-sandbox"],
 }
-
-USER_AGENT = None  # Scrapy User Agent
-DEFAULT_REQUEST_HEADERS = {
-    "User-Agent": USER_AGENT,  
-    "Accept-Language": "en-US,en;q=0.9,uk-UA;q=0.8,uk;q=0.7",  
-    "Referer": "https://www.olx.ua/",  
-    "Connection": "keep-alive",  
-}
-
-DOWNLOAD_HANDLERS = {
-    "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",  # Using Playwright for HTTP requests
-    "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",  # Using Playwright for HTTPS requests
-}
-
 PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT = 30_000
 
+# === HTTP Headers ===
+USER_AGENT = None
+DEFAULT_REQUEST_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept-Language": "en-US,en;q=0.9,uk-UA;q=0.8,uk;q=0.7",
+    "Referer": "https://www.olx.ua/",
+    "Connection": "keep-alive",
+}
+
+# === Download Handlers ===
+DOWNLOAD_HANDLERS = {
+    "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+    "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+}
+
+# === Pipelines ===
 ITEM_PIPELINES = {
     "olx_scraper.pipelines.PostgresPipeline": 300,  # Using PostgresPipeline to process data
 }
 
 # === Database settings ===
+
+# === Database Settings ===
 POSTGRES_URI = config("POSTGRES_URI", default="localhost")
 POSTGRES_DB = config("POSTGRES_DB", default="olx_db")
 POSTGRES_USER = config("POSTGRES_USER", default="user")
 POSTGRES_PASSWORD = config("POSTGRES_PASSWORD", default="password")
 
+# === Other Settings ===
 ROBOTSTXT_OBEY = False  # Ignoring robots.txt rules
+TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"  # Compatible with new versions of Twisted
+FEED_EXPORT_ENCODING = "utf-8"  # UTF-8 encoding for data export
 
+# === Logging Settings ===
+LOG_LEVEL = "INFO"
 # === Logging directory settings ===
-LOG_DIR = "logs"  # Directory for saving logs
-LOG_FILE = os.path.join(LOG_DIR, "olx_scraper.log")  # Full path to the log file
+LOGS_DIR = "logs"  # Directory for saving logs
+LOGS_FILE = os.path.join(LOGS_DIR, "olx_scraper.log")  # Full path to the log file
 MAX_LOG_FILE_SIZE = 1 * 1024 * 1024 * 1024  # Maximum size of the log file (1 GB)
 BACKUP_COUNT = 5  # Number of backup copies of logs
 
+# Ensure logs directory exists
+os.makedirs(LOGS_DIR, exist_ok=True)
 
-# Create a directory for logs
-os.makedirs(LOG_DIR, exist_ok=True)
+# Configure Scrapy Logging
+configure_logging(install_root_handler=False)
+logger = logging.getLogger()
 
-# Logging settings
-logger = logging.getLogger()  # Initializing logger
-logger.setLevel(LOG_LEVEL)  # Setting the logging level
+# Remove existing FileHandlers to avoid duplicates
+logger.handlers = [
+    handler for handler in logger.handlers if not isinstance(handler, logging.FileHandler)
+]
 
-# Rotation of logs
+logger.setLevel(LOG_LEVEL)
+
+# Rotating File Handler (Logs to file with rotation)
 rotating_handler = RotatingFileHandler(
-    LOG_FILE, maxBytes=MAX_LOG_FILE_SIZE, backupCount=BACKUP_COUNT
+    LOGS_FILE, maxBytes=MAX_LOG_FILE_SIZE, backupCount=BACKUP_COUNT
 )  # Creating a handler to rotate log files
 formatter = logging.Formatter(
     "%(asctime)s [%(levelname)s] %(name)s [%(funcName)s]: %(message)s"
 )
 rotating_handler.setFormatter(formatter)
-# rotating_handler.setLevel(logging.DEBUG)  # Setting the logging level (if different from general)
+rotating_handler.setLevel(logging.INFO)  # Setting the logging level (if different from general)
 logger.addHandler(rotating_handler)  # Adding a handler to the logger
 
-# Stream Handler for console output
-console_handler = logging.StreamHandler()
-console_formatter = logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s")
-console_handler.setFormatter(console_formatter)
-console_handler.setLevel(logging.INFO)  # Show only INFO level and above in terminal
-logger.addHandler(console_handler)
-
-
-# === =================== ===
-TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"  # Compatible with new versions of Twisted
-FEED_EXPORT_ENCODING = "utf-8"  # UTF-8 encoding for data export
+# Console Handler (Logs to terminal)
+if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s"))
+    console_handler.setLevel(logging.INFO)
+    logger.addHandler(console_handler)

@@ -63,7 +63,7 @@ class OlxSpider(scrapy.Spider):
         self.db_pipeline = None
 
     def open_spider(self, spider):
-        """Отримуємо екземпляр `PostgresPipeline`"""
+        """Get instance `PostgresPipeline`"""
         for pipeline in spider.crawler.engine.scraper.itemproc.pipelines:
             if isinstance(pipeline, PostgresPipeline):
                 self.db_pipeline = pipeline
@@ -71,7 +71,7 @@ class OlxSpider(scrapy.Spider):
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
-        """Scrapy passes a `crawler` here to give access to the `settings`"""
+        """Scrapy passes a `crawler` to give access to the `settings`"""
         spider = super().from_crawler(crawler, *args, **kwargs)
         # Get value from settings.py
         spider.start_page = crawler.settings.getint("START_PAGE", 1)
@@ -83,7 +83,6 @@ class OlxSpider(scrapy.Spider):
 
     def start_requests(self) -> Iterator[scrapy.Request]:
         """Override start_requests to include Playwright meta"""
-        self.logger.info("Starting the spider and generating requests...")
         for url in self.start_urls:
             self.logger.debug(f"Generating request for URL: {url}")
             yield scrapy.Request(

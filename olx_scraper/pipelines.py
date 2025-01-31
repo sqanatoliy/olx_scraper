@@ -79,11 +79,6 @@ class PostgresPipeline:
         except psycopg2.Error as e:
             spider.logger.error(f"Error closing PostgreSQL connection: {e}")
 
-    def is_ad_in_db(self, url):
-        """Checks if the ad is in the database"""
-        self.cursor.execute("SELECT EXISTS(SELECT 1 FROM ads WHERE url = %s)", (url,))
-        return self.cursor.fetchone()[0]
-
     def process_item(self, item, spider):
         try:
             adapter = ItemAdapter(item)

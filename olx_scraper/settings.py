@@ -4,10 +4,11 @@ from scrapy.utils.log import configure_logging
 from logging.handlers import RotatingFileHandler
 from decouple import config
 
+from olx_scraper.pipelines import PostgresPipeline
 
 # Range of pages of the list of ads (olx.ua/list)
 START_PAGE = 1
-END_PAGE = 2
+END_PAGE = 5
 
 # === Basic Scrapy setting ===
 BOT_NAME = "olx_scraper"  # Project name Scrapy
@@ -45,6 +46,7 @@ DOWNLOAD_HANDLERS = {
 ITEM_PIPELINES = {
     "olx_scraper.pipelines.PostgresPipeline": 300,  # Using PostgresPipeline to process data
 }
+
 
 # === Database settings ===
 

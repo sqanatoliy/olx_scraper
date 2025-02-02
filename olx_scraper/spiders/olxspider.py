@@ -79,17 +79,10 @@ class OlxSpider(scrapy.Spider):
     async def open_spider(self, spider):
         """Start Playwright """
         self.logger.info("Starting Playwright...")
+        # get PLAYWRIGHT_LAUNCH_OPTIONS from settings.py
+        launch_options = spider.settings.getdict("PLAYWRIGHT_LAUNCH_OPTIONS")
         self.playwright: Playwright = await async_playwright().start()
-        self.browser: Browser = await self.playwright.chromium.launch(
-            # executable_path="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--disable-gpu",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-            ],
-        )
+        self.browser: Browser = await self.playwright.chromium.launch(**launch_options,)
         self.context: BrowserContext = await self.browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             viewport={"width": 1920, "height": 1080},

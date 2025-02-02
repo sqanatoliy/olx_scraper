@@ -20,6 +20,7 @@ DOWNLOAD_DELAY = 1
 # === Playwright Settings ===
 PLAYWRIGHT_BROWSER_TYPE = "chromium"
 PLAYWRIGHT_LAUNCH_OPTIONS = {
+    # "executable_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "headless": True,
     "args": [
         "--disable-blink-features=AutomationControlled",

@@ -19,7 +19,10 @@ OLX_PASSWORD = config("OLX_PASSWORD")
 
 # path to state.json
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-STATE_JSON_FILE = PROJECT_ROOT / "state.json"
+STATE_FILE = PROJECT_ROOT / "state.json"
+
+# Check that state.json exist else None
+storage_state_path = str(STATE_FILE) if STATE_FILE.exists() else None
 
 
 async def check_403_error(page: Page, ad_link: str, spider: scrapy.Spider, timeout: int = 30_000) -> None:
@@ -201,7 +204,8 @@ async def new_context():
             extra_http_headers={
                 "Accept-Language": "uk-UA,uk;q=0.9",
                 "Referer": "https://www.olx.ua/",
-            }
+            },
+            storage_state=storage_state_path,
         )
         try:
             yield context
@@ -219,27 +223,38 @@ async def login_olx(
     page = await context.new_page()
     await page.evaluate("navigator.webdriver = undefined")
     await page.goto(olx_url, wait_until="domcontentloaded")
-    await page.click('a[data-cy="myolx-link"]')
-    await page.locator('#username').press_sequentially(olx_email, delay=100)
-    await page.locator('#password').press_sequentially(olx_password, delay=100)
-    await page.click('button[data-testid="login-submit-button"]')
-
     # Check login status
     user_button = page.locator('h5[data-testid="topbar-dropdown-header"]')
-    await user_button.wait_for(state="attached", timeout=15_000)
-    if user_button:
+    try:
+        await user_button.wait_for(state="attached", timeout=5_000)
         if spider:
-            spider.logger.info("✅ Авторизація успішна!")
+            spider.logger.info("✅ Авторизація успішно виконана з state.json файлу!")
         else:
-            print("✅ Авторизація успішна!")
-    else:
-        if spider:
-            spider.logger.warning("❌ Не вдалося авторизуватися!")
-        else:
-            print("❌ Не вдалося авторизуватися!")
-    # Save browser state
-    await context.storage_state(path=STATE_JSON_FILE)
-    await page.close()
+            print("✅ Авторизація успішно виконана з state.json файлу!")
+    except PlaywrightTimeoutError:
+
+        try:
+            await page.click('a[data-cy="myolx-link"]')
+            await page.locator('#username').press_sequentially(olx_email, delay=100)
+            await page.locator('#password').press_sequentially(olx_password, delay=100)
+            await page.click('button[data-testid="login-submit-button"]')
+
+            await user_button.wait_for(state="attached", timeout=10_000)
+            if spider:
+                spider.logger.info("✅ Авторизація успішно виконана через форму авторизації!")
+            else:
+                print("✅ Авторизація успішно виконана через форму авторизації!")
+
+        except PlaywrightTimeoutError:
+            if spider:
+                spider.logger.warning("❌ Не вдалося авторизуватися!")
+            else:
+                print("❌ Не вдалося авторизуватися!")
+
+    finally:
+        # Save browser state
+        await context.storage_state(path=STATE_FILE)
+        await page.close()
 
 
 # Get the context for testing and login

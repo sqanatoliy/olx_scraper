@@ -47,7 +47,7 @@ RUN env >> /etc/environment
 RUN touch /app/dumps/cron.log && chmod 777 /app/dumps/cron.log
 
 # Add a cron job for database dump (daily at 12:00 Kyiv time)
-RUN echo "0 15 * * * /bin/bash /app/dump_postgres.sh >> /app/dumps/cron.log 2>&1" > /etc/cron.d/db_dump
+RUN echo "0 12 * * * /bin/bash /app/dump_postgres.sh >> /app/dumps/cron.log 2>&1" > /etc/cron.d/db_dump
 
 # Add a cron job for Scrapy execution every hour
 RUN echo "0 * * * * /bin/bash /app/start_scraper.sh >> /var/log/cron.log 2>&1" > /etc/cron.d/scraper_cron

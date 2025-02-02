@@ -1,14 +1,12 @@
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 from scrapy.utils.log import configure_logging
-from logging.handlers import RotatingFileHandler
-from decouple import config
-
-from olx_scraper.pipelines import PostgresPipeline
+from decouple import config, Config, RepositoryEnv
 
 # Range of pages of the list of ads (olx.ua/list)
 START_PAGE = 1
-END_PAGE = 5
+END_PAGE = 1
 
 # === Basic Scrapy setting ===
 BOT_NAME = "olx_scraper"  # Project name Scrapy
@@ -23,7 +21,12 @@ DOWNLOAD_DELAY = 1
 PLAYWRIGHT_BROWSER_TYPE = "chromium"
 PLAYWRIGHT_LAUNCH_OPTIONS = {
     "headless": True,
-    "args": ["--no-sandbox", "--disable-setuid-sandbox"],
+    "args": [
+        "--disable-blink-features=AutomationControlled",
+        "--disable-gpu",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+    ],
 }
 PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT = 30_000
 
@@ -48,7 +51,11 @@ ITEM_PIPELINES = {
 }
 
 
-# === Database settings ===
+# === .ENV settings ===
+if os.path.exists(".env.local"):
+    config = Config(RepositoryEnv(".env.local"))
+else:
+    config = Config(RepositoryEnv(".env"))
 
 # === Database Settings ===
 POSTGRES_URI = config("POSTGRES_URI", default="localhost")

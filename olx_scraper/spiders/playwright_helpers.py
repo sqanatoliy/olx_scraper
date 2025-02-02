@@ -3,10 +3,23 @@
 Містить допоміжні функції для перевірки помилки 403,
 паузи виконання скрипта, скролінгу та кліків на елементах сторінки.
 """
+import asyncio
+from contextlib import asynccontextmanager
+from pathlib import Path
+
 import scrapy
-from playwright.async_api import Page
+from decouple import config
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
-from scrapy.exceptions import IgnoreRequest
+from playwright.async_api import async_playwright, Page, BrowserContext
+
+# Data for OLX Login
+OLX_URL = "https://www.olx.ua/"
+OLX_EMAIL = config("OLX_EMAIL")
+OLX_PASSWORD = config("OLX_PASSWORD")
+
+# path to state.json
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+STATE_JSON_FILE = PROJECT_ROOT / "state.json"
 
 
 async def check_403_error(page: Page, ad_link: str, spider: scrapy.Spider, timeout: int = 30_000) -> None:
@@ -106,7 +119,7 @@ async def wait_for_number_of_views(
     :param spider: екземпляр scrapy.Spider
     """
     try:
-        await page.wait_for_selector(ad_view_counter_selector, timeout=2_000)
+        await page.wait_for_selector(ad_view_counter_selector, timeout=500)
     except PlaywrightTimeoutError as err:
         spider.logger.warning(
             "=== The expectation for the number of views was not successful: %s ===", err)
@@ -158,3 +171,82 @@ async def scroll_and_click_to_show_phone(
             "=== Phone did not display successfully after clicking the 'Show Phone' button ===")
         return
     return
+
+
+# LOGIN OLX
+
+# this context for authentication testing
+@asynccontextmanager
+async def new_context():
+    """A new context that is needed either to test the login_olx function,
+    or to manually save the auth state of state.json.
+    The file will be saved to the root project directory
+    then you can add it to the context when performing scraping"""
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=False,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-gpu",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+            ]
+        )
+        context: BrowserContext = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080},
+            java_script_enabled=True,
+            timezone_id="Europe/Kiev",
+            locale="uk-UA",
+            extra_http_headers={
+                "Accept-Language": "uk-UA,uk;q=0.9",
+                "Referer": "https://www.olx.ua/",
+            }
+        )
+        try:
+            yield context
+        finally:
+            await browser.close()
+
+
+async def login_olx(
+        context: BrowserContext,
+        olx_url: str,
+        olx_email: str, olx_password: str,
+        spider: scrapy.Spider = None,
+) -> None:
+    """Logs in to OLX using Playwright and saves the session"""
+    page = await context.new_page()
+    await page.evaluate("navigator.webdriver = undefined")
+    await page.goto(olx_url, wait_until="domcontentloaded")
+    await page.click('a[data-cy="myolx-link"]')
+    await page.locator('#username').press_sequentially(olx_email, delay=100)
+    await page.locator('#password').press_sequentially(olx_password, delay=100)
+    await page.click('button[data-testid="login-submit-button"]')
+
+    # Check login status
+    user_button = page.locator('h5[data-testid="topbar-dropdown-header"]')
+    await user_button.wait_for(state="attached", timeout=15_000)
+    if user_button:
+        if spider:
+            spider.logger.info("✅ Авторизація успішна!")
+        else:
+            print("✅ Авторизація успішна!")
+    else:
+        if spider:
+            spider.logger.warning("❌ Не вдалося авторизуватися!")
+        else:
+            print("❌ Не вдалося авторизуватися!")
+    # Save browser state
+    await context.storage_state(path=STATE_JSON_FILE)
+    await page.close()
+
+
+# Get the context for testing and login
+async def main():
+    async with new_context() as context:
+        await login_olx(context, OLX_URL, OLX_EMAIL, OLX_PASSWORD)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

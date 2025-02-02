@@ -1,9 +1,11 @@
 import re
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Iterator, AsyncGenerator, Any
 
 import scrapy
-from playwright.async_api import async_playwright
+from decouple import config
+from playwright.async_api import Browser, BrowserContext, Playwright, async_playwright
 from scrapy import signals
 from scrapy.http import Response
 from scrapy.selector.unified import SelectorList
@@ -12,9 +14,21 @@ from .playwright_helpers import (
     check_403_error,
     scroll_to_number_of_views,
     scroll_and_click_to_show_phone,
-    wait_for_number_of_views,
+    wait_for_number_of_views, login_olx,
 )
 from ..items import OlxScraperItem
+
+# OLX credentials
+OLX_URL = "https://www.olx.ua/"
+OLX_EMAIL = config("OLX_EMAIL")
+OLX_PASSWORD = config("OLX_PASSWORD")
+
+# path to the root of the project
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+STATE_FILE = PROJECT_ROOT / "state.json"
+# Check that state.json exist else None
+storage_state_path = str(STATE_FILE) if STATE_FILE.exists() else None
+
 
 # ADS LIST PAGE
 ADS_BLOCK_SELECTOR = 'div[data-testid="l-card"]'
@@ -65,9 +79,30 @@ class OlxSpider(scrapy.Spider):
     async def open_spider(self, spider):
         """Start Playwright """
         self.logger.info("Starting Playwright...")
-        self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(headless=True)
-        self.context = await self.browser.new_context(viewport={"width": 1980, "height": 1020})
+        self.playwright: Playwright = await async_playwright().start()
+        self.browser: Browser = await self.playwright.chromium.launch(
+            # executable_path="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-gpu",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+            ],
+        )
+        self.context: BrowserContext = await self.browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080},
+            java_script_enabled=True,
+            timezone_id="Europe/Kiev",
+            locale="uk-UA",
+            extra_http_headers={
+                "Accept-Language": "uk-UA,uk;q=0.9",
+                "Referer": "https://www.olx.ua/",
+            },
+            storage_state=storage_state_path
+        )
+        await login_olx(self.context, OLX_URL, OLX_EMAIL, OLX_PASSWORD, self)
         if self.context:
             self.logger.info("Playwright started successfully!")
         else:
@@ -89,8 +124,6 @@ class OlxSpider(scrapy.Spider):
         spider.start_urls = [
             f"https://www.olx.ua/uk/list/?page={i}" for i in range(spider.start_page, spider.end_page + 1)
         ]
-
-        spider.db_pipeline = crawler.settings.get('POSTGRES_PIPELINE')
         return spider
 
     # async def init_playwright(self):
@@ -163,6 +196,7 @@ class OlxSpider(scrapy.Spider):
             return
         try:
             await page.goto(response.url, wait_until="domcontentloaded")
+            # await page.pause()
             item: OlxScraperItem = response.meta["item"]
 
             await check_403_error(page, response.url, self)

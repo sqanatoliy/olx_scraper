@@ -185,3 +185,5 @@ pyrightconfig.json
 dumps/
 logs/
 /logs/
+/.env.local
+/state.json

@@ -1,5 +1,6 @@
 #!/bin/bash
 
+set -e  # Stop script if any command fails
 export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
 
 source /etc/profile
@@ -31,6 +32,7 @@ pg_dump -h "$POSTGRES_URI" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -F c -f "$DUMP_
 
 # Лог, якщо дамп успішний
 if [ $? -eq 0 ]; then
+    chmod 600 "$DUMP_FILE"
     echo "[$(date +"%Y-%m-%d %H:%M:%S")] DB dump saved: $DUMP_FILE" >> /app/dumps/cron.log
 else
     echo "[$(date +"%Y-%m-%d %H:%M:%S")] ERROR: Failed to create DB dump!" >> /app/dumps/cron.log

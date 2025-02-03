@@ -36,7 +36,7 @@ class PostgresPipeline:
 
     def open_spider(self, spider):
         try:
-            spider.logger.info("Opening PostgreSQL pipeline.")
+            spider.logger.info("📡 Opening PostgreSQL pipeline.")
             self.conn = psycopg2.connect(
                 host=self.postgres_uri,
                 dbname=self.postgres_db,
@@ -65,8 +65,9 @@ class PostgresPipeline:
             )
             """)
             self.conn.commit()
+            spider.logger.info("✅ Table checked or created.")
         except psycopg2.Error as e:
-            spider.logger.error(f"Error connecting to PostgreSQL: {e}")
+            spider.logger.error(f"❌ Error connecting to PostgreSQL: {e}")
             raise
 
     def close_spider(self, spider):
@@ -76,8 +77,9 @@ class PostgresPipeline:
                 self.cursor.close()
             if self.conn:
                 self.conn.close()
+                spider.logger.info("✅ Connection successfully closed.")
         except psycopg2.Error as e:
-            spider.logger.error(f"Error closing PostgreSQL connection: {e}")
+            spider.logger.error(f"❌ Error closing PostgreSQL connection: {e}")
 
     def process_item(self, item, spider):
         try:
@@ -85,13 +87,13 @@ class PostgresPipeline:
 
             ad_id = adapter.get('ad_id')
             if not ad_id:
-                spider.logger.warning("Item does not have a valid ad_id. Skipping insert.")
+                spider.logger.warning("⚠️ Item does not have a valid ad_id. Skipping insert.")
                 return item
 
             # Checking if the ad_id is in the database
             self.cursor.execute("SELECT EXISTS(SELECT 1 FROM ads WHERE ad_id = %s)", (ad_id,))
             if self.cursor.fetchone()[0]:
-                spider.logger.info(f"Item with ID {ad_id} already exists. Skipping insert.")
+                spider.logger.info(f"🔄 Item with ID {ad_id} already exists. Skipping insert.")
                 return item
 
             data = (
@@ -122,14 +124,14 @@ class PostgresPipeline:
             """, data)
 
             self.conn.commit()
-            spider.logger.info(f"Item with ID {adapter.get('ad_id')} saved successfully.")
+            spider.logger.info(f"✅ Item with ID {adapter.get('ad_id')} saved successfully.")
             return item
 
         except psycopg2.Error as e:
-            spider.logger.error(f"Database error while saving item: {e}")
+            spider.logger.error(f"❌ Database error while saving item: {e}")
             self.conn.rollback()
             return item
 
         except Exception as e:
-            spider.logger.error(f"Unexpected error in process_item: {e}")
+            spider.logger.error(f"❌ Unexpected error in process_item: {e}")
             return item

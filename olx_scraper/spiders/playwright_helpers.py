@@ -96,7 +96,7 @@ async def scroll_to_number_of_views(
         spider.logger.info(
             "-----===== Start to scrolling into Number of Views =====-----"
         )
-        await page.locator(footer_bar_selector).scroll_into_view_if_needed()
+        await page.locator(footer_bar_selector).scroll_into_view_if_needed(timeout=2_000)
         await page.locator(user_name_selector).first.wait_for(timeout=5_000)
         await page.locator(description_parts_selector).wait_for(timeout=5_000)
         spider.logger.info(
@@ -122,7 +122,7 @@ async def wait_for_number_of_views(
     :param spider: екземпляр scrapy.Spider
     """
     try:
-        await page.wait_for_selector(ad_view_counter_selector, timeout=500)
+        await page.wait_for_selector(ad_view_counter_selector, timeout=2_500)
     except PlaywrightTimeoutError as err:
         spider.logger.warning(
             "=== The expectation for the number of views was not successful: %s ===", err)
@@ -156,7 +156,7 @@ async def scroll_and_click_to_show_phone(
     """
     try:
         spider.logger.info("=== Start to scrolling into show phone button ===")
-        await page.locator(btn_show_phone_selector).wait_for(timeout=100)
+        await page.locator(btn_show_phone_selector).wait_for(timeout=2_000)
     except PlaywrightTimeoutError as err:
         spider.logger.warning("===The 'Show phone' button is not displayed: %s ===", err)
         return

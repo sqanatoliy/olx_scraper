@@ -1,4 +1,5 @@
 import re
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterator, AsyncGenerator, Any
@@ -6,6 +7,7 @@ from typing import Iterator, AsyncGenerator, Any
 import scrapy
 from decouple import config
 from playwright.async_api import Browser, BrowserContext, Playwright, async_playwright
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from scrapy import signals
 from scrapy.http import Response
 from scrapy.selector.unified import SelectorList
@@ -28,7 +30,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 STATE_FILE = PROJECT_ROOT / "state.json"
 # Check that state.json exist else None
 storage_state_path = str(STATE_FILE) if STATE_FILE.exists() else None
-
 
 # ADS LIST PAGE
 ADS_BLOCK_SELECTOR = 'div[data-testid="l-card"]'
@@ -82,7 +83,7 @@ class OlxSpider(scrapy.Spider):
         # get PLAYWRIGHT_LAUNCH_OPTIONS from settings.py
         launch_options = spider.settings.getdict("PLAYWRIGHT_LAUNCH_OPTIONS")
         self.playwright: Playwright = await async_playwright().start()
-        self.browser: Browser = await self.playwright.chromium.launch(**launch_options,)
+        self.browser: Browser = await self.playwright.chromium.launch(**launch_options, )
         self.context: BrowserContext = await self.browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             viewport={"width": 1920, "height": 1080},
@@ -91,7 +92,7 @@ class OlxSpider(scrapy.Spider):
             locale="uk-UA",
             extra_http_headers={
                 "Accept-Language": "uk-UA,uk;q=0.9",
-                "Referer": "https://www.olx.ua/",
+                "Referer": f"{OLX_URL}",
             },
             storage_state=storage_state_path
         )
@@ -115,7 +116,7 @@ class OlxSpider(scrapy.Spider):
         spider.start_page = crawler.settings.getint("START_PAGE", 1)
         spider.end_page = crawler.settings.getint("END_PAGE", 6)
         spider.start_urls = [
-            f"https://www.olx.ua/uk/list/?page={i}" for i in range(spider.start_page, spider.end_page + 1)
+            f"{OLX_URL}uk/list/?page={i}" for i in range(spider.start_page, spider.end_page + 1)
         ]
         return spider
 
@@ -183,35 +184,47 @@ class OlxSpider(scrapy.Spider):
     ) -> AsyncGenerator[OlxScraperItem, None]:
         """Processing the detailed page of the ad"""
         context = response.meta["context"]
-        page = await context.new_page()
         if not context:
-            self.logger.error("Playwright context not passed in parse_ad()!")
+            self.logger.error("❌ Playwright context not passed in parse_ad()!")
             return
+
+        page = await context.new_page()
         try:
+            start_time = time.time()
             await page.goto(response.url, wait_until="domcontentloaded")
-            # await page.pause()
+            self.logger.info(f"✅ Loaded {response.url} in {time.time() - start_time:.2f}s")
             item: OlxScraperItem = response.meta["item"]
 
             await check_403_error(page, response.url, self)
             await scroll_to_number_of_views(page, FOOTER_BAR_SELECTOR, USER_NAME_SELECTOR, DESCRIPTION_PARTS_SELECTOR, self)
             await wait_for_number_of_views(page, AD_VIEW_COUNTER_SELECTOR, self)
 
+            # -- ⬇️ Using variables to improve readability ⬇️ --
+            ad_pub_date_locator = page.locator(AD_PUB_DATE_SELECTOR)
+            user_name_locator = page.locator(USER_NAME_SELECTOR).first
+            user_score_locator = page.locator(USER_SCORE_SELECTOR).first
+            user_registration_locator = page.locator(USER_REGISTRATION_SELECTOR).first
+            user_last_seen_locator = page.locator(USER_LAST_SEEN_SELECTOR).first
+            ad_id_locator = page.locator(AD_ID_SELECTOR).first
+            ad_view_counter_locator = page.locator(AD_VIEW_COUNTER_SELECTOR)
+            contact_phone_locator = page.locator(CONTACT_PHONE_SELECTOR)
+
             # Ad publication date
-            ad_pub_date: str | None = await page.locator(AD_PUB_DATE_SELECTOR).text_content()
+            ad_pub_date = await ad_pub_date_locator.text_content()
 
             # User profile
-            user_name: str | None = await page.locator(USER_NAME_SELECTOR).first.text_content()
-            user_score_element = page.locator(USER_SCORE_SELECTOR)
-            if await user_score_element.first.is_visible(timeout=1_000):
-                user_score = await user_score_element.first.text_content()
-            else:
-                user_score = "Ще не має рейтингу"
-            user_registration = await page.locator(USER_REGISTRATION_SELECTOR).first.text_content()
-            user_last_seen_element = page.locator(USER_LAST_SEEN_SELECTOR)
-            if await user_last_seen_element.first.is_visible(timeout=100):
-                user_last_seen = await page.locator(USER_LAST_SEEN_SELECTOR).first.text_content()
-            else:
-                user_last_seen = None
+            user_name = await user_name_locator.first.text_content()
+            user_score = (
+                await user_score_locator.first.text_content()
+                if await user_score_locator.first.is_visible(timeout=1000)
+                else "Ще не має рейтингу"
+            )
+            user_registration = await user_registration_locator.text_content()
+            user_last_seen = (
+                await user_last_seen_locator.first.text_content()
+                if await user_last_seen_locator.first.is_visible(timeout=100)
+                else None
+            )
 
             # Location
             map_overlay = page.locator(MAP_OVERLAY_SELECTOR)
@@ -220,32 +233,32 @@ class OlxSpider(scrapy.Spider):
             location = " ".join(loc.strip() for loc in location_parts if loc)
 
             # Extracting images
-            block_with_photos = page.locator(BLOCK_WITH_PHOTO_SELECTOR)
-            if await block_with_photos.first.is_visible(timeout=1_000):
-                img_elements = await block_with_photos.locator("img").all()
+            block_with_locator = page.locator(BLOCK_WITH_PHOTO_SELECTOR)
+            if await block_with_locator.first.is_visible(timeout=1_000):
+                img_elements = await block_with_locator.locator("img").all()
                 img_urls_list = [await img.get_attribute("src") for img in img_elements if await img.get_attribute("src")]
             else:
                 img_urls_list = ["Ad does not have photos"]
 
             # Extracting tags and description
-            ad_tags_element = page.locator(AD_TAGS_SELECTOR)
-            if await ad_tags_element.first.is_visible(timeout=1_000):
-                ad_tags = await page.locator(AD_TAGS_SELECTOR).all_text_contents()
-            else:
-                ad_tags = ["Ad doesnt have tags"]
+            ad_tags_locator = page.locator(AD_TAGS_SELECTOR)
+            ad_tags = (
+                await ad_tags_locator.all_text_contents()
+                if await ad_tags_locator.first.is_visible(timeout=1000)
+                else ["Ad doesnt have tags"]
+            )
 
             description_parts = await page.locator(DESCRIPTION_PARTS_SELECTOR).all_text_contents()
             description = " ".join(part.strip() for part in description_parts if part)
 
             # Extracting ad ID and view counter
-            ad_id = await page.locator(AD_ID_SELECTOR).first.text_content()
+            ad_id = await ad_id_locator.text_content()
 
-            ad_view_counter_element = page.locator(AD_VIEW_COUNTER_SELECTOR)
-            if await ad_view_counter_element.is_visible(timeout=3_000):
-                ad_view_counter = await page.locator(AD_VIEW_COUNTER_SELECTOR).text_content()
-            else:
-                ad_view_counter = "Ad doesnt have view"
-
+            ad_view_counter = (
+                await ad_view_counter_locator.text_content()
+                if await ad_view_counter_locator.is_visible(timeout=3_000)
+                else "Ad doesnt have view"
+            )
             item["ad_pub_date"] = self.parse_date(ad_pub_date)
             item["user_name"] = user_name.strip() if user_name else None
             item["user_score"] = user_score if user_score else None
@@ -271,23 +284,22 @@ class OlxSpider(scrapy.Spider):
                 self,
             )
 
-            phone_number_element = page.locator(CONTACT_PHONE_SELECTOR)
-            if await phone_number_element.first.is_visible(timeout=2_000):
-                phone_number = await page.locator(CONTACT_PHONE_SELECTOR).first.text_content()
-            else:
-                phone_number = "N/A"
+            phone_number = (
+                await contact_phone_locator.first.text_content()
+                if await contact_phone_locator.first.is_visible(timeout=2000)
+                else "N/A"
+            )
 
-            item["phone_number"] = phone_number if phone_number else None
-            self.logger.info("Phone is %s", phone_number)
+            item["phone_number"] = phone_number
+            self.logger.info(f"📞 Phone number extracted: {phone_number}")
             # Save data
             yield item
-            await page.close()
-            self.logger.info("Page closed")
+        except PlaywrightTimeoutError as err:
+            self.logger.error(f"⏳ Timeout error while parsing {response.url}: {err}")
         except Exception as e:
-            self.logger.error(f"Error in parse_ad: {e}")
+            self.logger.error(f"❌ Unexpected error in parse_ad: {e}", exc_info=True)
+        finally:
             await page.close()
-            self.logger.info("Page closed after exception %s", e)
-            raise
 
     async def close_spider(self, spider):
         """Закриваємо Playwright після завершення роботи"""

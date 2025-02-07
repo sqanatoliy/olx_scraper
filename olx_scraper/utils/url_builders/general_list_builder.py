@@ -1,6 +1,6 @@
 from urllib.parse import urlencode
 
-from base_builder import BaseUrlBuilder
+from .base_builder import BaseUrlBuilder
 
 
 class GeneralListUrlBuilder(BaseUrlBuilder):

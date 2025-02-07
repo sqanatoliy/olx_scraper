@@ -6,7 +6,7 @@ from decouple import config, Config, RepositoryEnv
 
 # Range of pages of the list of ads (olx.ua/list)
 START_PAGE = 1
-END_PAGE = 1
+END_PAGE = 2
 
 # === Basic Scrapy setting ===
 BOT_NAME = "olx_scraper"  # Project name Scrapy

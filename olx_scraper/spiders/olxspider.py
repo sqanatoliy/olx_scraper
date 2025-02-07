@@ -1,3 +1,4 @@
+import json
 import re
 import time
 from datetime import datetime, timedelta
@@ -5,20 +6,21 @@ from pathlib import Path
 from typing import Iterator, AsyncGenerator, Any
 
 import scrapy
-from decouple import config
-from playwright.async_api import Browser, BrowserContext, Playwright, async_playwright
-from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from scrapy import signals
 from scrapy.http import Response
 from scrapy.selector.unified import SelectorList
+from decouple import config
+from playwright.async_api import Browser, BrowserContext, Playwright, async_playwright, TimeoutError as PlaywrightTimeoutError
 
+from ..items import OlxScraperItem
+from ..utils.url_factory import UrlBuilderFactory
 from .playwright_helpers import (
     check_403_error,
     scroll_to_number_of_views,
     scroll_and_click_to_show_phone,
     wait_for_number_of_views, login_olx,
 )
-from ..items import OlxScraperItem
+
 
 # OLX credentials
 OLX_URL = "https://www.olx.ua/"
@@ -71,18 +73,45 @@ class OlxSpider(scrapy.Spider):
     name = "olx"
     allowed_domains: list[str] = ["olx.ua"]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(
+            self, category="list", location=None, subcategory_1=None, subcategory_2=None, filters=None, start_page=None, end_page=None, *args, **kwargs
+    ):
+        """
+        :param category: Основна категорія OLX (list, nedvizhimost, transport).
+        :param location: Локація (місто або регіон).
+        :param subcategory_1: Перша підкатегорія (наприклад, 'kvartiry', 'legkovye-avtomobili').
+        :param subcategory_2: Друга підкатегорія (наприклад, 'prodazha-kvartir', 'bmw').
+        :param filters: JSON-рядок із фільтрами для запиту.
+        """
         super().__init__(*args, **kwargs)
+        self.filters_dict = json.loads(filters) if filters else {}
+
+        self.start_page = start_page
+        self.end_page = end_page
+
+        # Створюємо генератор URL через фабрику
+        try:
+            self.url_builder = UrlBuilderFactory.get_builder(
+                category=category,
+                location=location,
+                subcategory_1=subcategory_1,
+                subcategory_2=subcategory_2,
+                filters_dict=self.filters_dict
+            )
+        except ValueError as e:
+            self.logger.error(f"❌ Помилка у фабриці генерації URL: {e}")
+            return
+
         self.browser = None
         self.context = None
         self.playwright = None
 
     async def open_spider(self, spider):
         """Start Playwright """
-        self.logger.info("Starting Playwright...")
+        self.logger.info("🚀 Starting Playwright...")
         # get PLAYWRIGHT_LAUNCH_OPTIONS from settings.py
-        launch_options = spider.settings.getdict("PLAYWRIGHT_LAUNCH_OPTIONS")
         self.playwright: Playwright = await async_playwright().start()
+        launch_options = spider.settings.getdict("PLAYWRIGHT_LAUNCH_OPTIONS")
         self.browser: Browser = await self.playwright.chromium.launch(**launch_options, )
         self.context: BrowserContext = await self.browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -98,9 +127,9 @@ class OlxSpider(scrapy.Spider):
         )
         await login_olx(self.context, OLX_URL, OLX_EMAIL, OLX_PASSWORD, self)
         if self.context:
-            self.logger.info("Playwright started successfully!")
+            self.logger.info("✅ Playwright started successfully!")
         else:
-            self.logger.error("Error Playwright! self.context or self.browser = None")
+            self.logger.error("❌ Error Playwright! self.context or self.browser = None")
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
@@ -112,12 +141,13 @@ class OlxSpider(scrapy.Spider):
         # # Start async Playwright
         # asyncio.ensure_future(spider.init_playwright())
 
-        # Get value from settings.py
-        spider.start_page = crawler.settings.getint("START_PAGE", 1)
-        spider.end_page = crawler.settings.getint("END_PAGE", 6)
-        spider.start_urls = [
-            f"{OLX_URL}uk/list/?page={i}" for i in range(spider.start_page, spider.end_page + 1)
-        ]
+        # Отримуємо `start_page` і `end_page` з `settings.py`, якщо вони не передані через Scrapy
+        spider.start_page = int(kwargs.get("start_page", crawler.settings.getint("START_PAGE", 1)))
+        spider.end_page = int(kwargs.get("end_page", crawler.settings.getint("END_PAGE", 1)))
+
+        # Створюємо `start_urls` тільки після оновлення `start_page` та `end_page`
+        spider.start_urls = [spider.url_builder.build_url(page=i) for i in range(spider.start_page, spider.end_page + 1)]
+
         return spider
 
     # async def init_playwright(self):
@@ -192,7 +222,6 @@ class OlxSpider(scrapy.Spider):
         try:
             start_time = time.time()
             await page.goto(response.url, wait_until="domcontentloaded")
-            self.logger.info(f"✅ Loaded {response.url} in {time.time() - start_time:.2f}s")
             item: OlxScraperItem = response.meta["item"]
 
             await check_403_error(page, response.url, self)
@@ -283,7 +312,7 @@ class OlxSpider(scrapy.Spider):
                 CONTACT_PHONE_SELECTOR,
                 self,
             )
-
+            self.logger.info(f"✅ Loaded {response.url} in {time.time() - start_time:.2f}s")
             phone_number = (
                 await contact_phone_locator.first.text_content()
                 if await contact_phone_locator.first.is_visible(timeout=2000)
@@ -302,14 +331,15 @@ class OlxSpider(scrapy.Spider):
             await page.close()
 
     async def close_spider(self, spider):
-        """Закриваємо Playwright після завершення роботи"""
-        self.logger.info("Закриваємо Playwright...")
+        """Close Playwright after all"""
+        self.logger.info("🛑 Closing Playwright...")
         if self.context:
             await self.context.close()
         if self.browser:
             await self.browser.close()
 
     async def errback_close_page(self, failure) -> None:
+        """Handling errors during scraping"""
         meta: Any = failure.request.meta
         if "playwright_page" in meta:
             page: Any = meta.get("page")

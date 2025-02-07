@@ -122,7 +122,7 @@ async def wait_for_number_of_views(
     :param spider: екземпляр scrapy.Spider
     """
     try:
-        await page.wait_for_selector(ad_view_counter_selector, timeout=2_500)
+        await page.wait_for_selector(ad_view_counter_selector, timeout=3_000)
     except PlaywrightTimeoutError as err:
         spider.logger.warning(
             "=== The expectation for the number of views was not successful: %s ===", err)

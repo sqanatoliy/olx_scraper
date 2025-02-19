@@ -25,7 +25,7 @@ STATE_FILE = PROJECT_ROOT / "state.json"
 storage_state_path = str(STATE_FILE) if STATE_FILE.exists() else None
 
 
-async def check_403_error(page: Page, ad_link: str, spider: scrapy.Spider, timeout: int = 30_000) -> None:
+async def check_403_error(context: BrowserContext, page: Page, ad_link: str, spider: scrapy.Spider, timeout: int = 30_000) -> None:
     """
     Перевіряє сторінку на наявність помилки 403 від CloudFront.
 
@@ -36,6 +36,7 @@ async def check_403_error(page: Page, ad_link: str, spider: scrapy.Spider, timeo
     піднімає виключення.
 
     :param spider: екземпляр scrapy.Spider
+    :param context Playwright BrowserContext
     :param page: Екземпляр Playwright Page.
     :param ad_link: URL оголошення для логування.
     :param timeout: Час очікування перед закриттям сторінки
@@ -46,7 +47,8 @@ async def check_403_error(page: Page, ad_link: str, spider: scrapy.Spider, timeo
         spider.logger.warning(f"===== Attention 403 ERROR detected. Blocked by CloudFront Next request in {timeout} seconds URL: %s =====", ad_link)
         await page.wait_for_timeout(timeout)
         await page.close()
-        raise f"===== Blocked by CloudFront. URL: {ad_link} ====="
+        await context.close()
+        raise RuntimeError(f"Blocked by CloudFront: 403 ERROR on {ad_link}")
 
 
 async def page_pause(page: Page, spider: scrapy.Spider) -> None:
@@ -174,6 +176,17 @@ async def scroll_and_click_to_show_phone(
             "=== Phone did not display successfully after clicking the 'Show Phone' button ===")
         return
     return
+
+
+# GET NEW PROXY
+
+def get_new_proxy(proxy_server, proxy_username, proxy_password):
+    """Функція отримання нового проксі"""
+    return {
+        "server": f"{proxy_server}:PORT",
+        "username": proxy_username,
+        "password": proxy_password
+    }
 
 
 # LOGIN OLX

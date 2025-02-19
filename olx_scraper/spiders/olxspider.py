@@ -18,10 +18,14 @@ from .playwright_helpers import (
     check_403_error,
     scroll_to_number_of_views,
     scroll_and_click_to_show_phone,
-    wait_for_number_of_views, login_olx,
+    wait_for_number_of_views, login_olx, get_new_proxy,
 )
 
 
+# PROXY SERVER
+PROXY_SERVER = config("PROXY_SERVER")
+PROXY_USERNAME = config("PROXY_USERNAME")
+PROXY_PASSWORD = config("PROXY_PASSWORD")
 # OLX credentials
 OLX_URL = "https://www.olx.ua/"
 OLX_EMAIL = config("OLX_EMAIL")
@@ -103,7 +107,7 @@ class OlxSpider(scrapy.Spider):
             return
 
         self.browser = None
-        self.context = None
+        # self.context = None
         self.playwright = None
 
     async def open_spider(self, spider):
@@ -113,7 +117,7 @@ class OlxSpider(scrapy.Spider):
         self.playwright: Playwright = await async_playwright().start()
         launch_options = spider.settings.getdict("PLAYWRIGHT_LAUNCH_OPTIONS")
         self.browser: Browser = await self.playwright.chromium.launch(**launch_options, )
-        self.context: BrowserContext = await self.browser.new_context(
+        temp_context: BrowserContext = await self.browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             viewport={"width": 1920, "height": 1080},
             java_script_enabled=True,
@@ -125,11 +129,12 @@ class OlxSpider(scrapy.Spider):
             },
             storage_state=storage_state_path
         )
-        await login_olx(self.context, OLX_URL, OLX_EMAIL, OLX_PASSWORD, self)
-        if self.context:
+        await login_olx(temp_context, OLX_URL, OLX_EMAIL, OLX_PASSWORD, self)
+        if temp_context:
             self.logger.info("✅ Playwright started successfully!")
         else:
-            self.logger.error("❌ Error Playwright! self.context or self.browser = None")
+            self.logger.error("❌ Error Playwright! temp_context or self.browser = None")
+        await temp_context.close()
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
@@ -169,14 +174,12 @@ class OlxSpider(scrapy.Spider):
                 url=url,
                 callback=self.parse,
                 meta={
-                    "context": self.context
                 },
                 errback=self.errback_close_page,
             )
 
     def parse(self, response: Response) -> Iterator[scrapy.Request]:
         """Get all urls"""
-        context = response.meta["context"]
         self.logger.info(f"Parsing response from {response.url}")
         ads_block: SelectorList = response.css(ADS_BLOCK_SELECTOR)
         if not ads_block:
@@ -204,7 +207,7 @@ class OlxSpider(scrapy.Spider):
                 url=full_url,
                 callback=self.parse_ad,
                 meta={
-                    "item": item, "context": context
+                    "item": item,
                 },
                 errback=self.errback_close_page,
             )
@@ -213,18 +216,33 @@ class OlxSpider(scrapy.Spider):
             self, response: Response
     ) -> AsyncGenerator[OlxScraperItem, None]:
         """Processing the detailed page of the ad"""
-        context = response.meta["context"]
+        proxy = get_new_proxy(PROXY_SERVER, PROXY_USERNAME, PROXY_PASSWORD)
+
+        context = await self.browser.new_context(
+            # proxy=proxy,
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080},
+            java_script_enabled=True,
+            timezone_id="Europe/Kiev",
+            locale="uk-UA",
+            extra_http_headers={
+                "Accept-Language": "uk-UA,uk;q=0.9",
+                "Referer": f"{OLX_URL}",
+            },
+        )
+        response.meta["context"] = context
         if not context:
-            self.logger.error("❌ Playwright context not passed in parse_ad()!")
+            self.logger.error("❌ Playwright context not created in parse_ad()!")
             return
 
         page = await context.new_page()
+        response.meta["page"] = page
         try:
             start_time = time.time()
             await page.goto(response.url, wait_until="domcontentloaded")
             item: OlxScraperItem = response.meta["item"]
 
-            await check_403_error(page, response.url, self)
+            await check_403_error(context, page, response.url, self)
             await scroll_to_number_of_views(page, FOOTER_BAR_SELECTOR, USER_NAME_SELECTOR, DESCRIPTION_PARTS_SELECTOR, self)
             await wait_for_number_of_views(page, AD_VIEW_COUNTER_SELECTOR, self)
 
@@ -329,29 +347,40 @@ class OlxSpider(scrapy.Spider):
             self.logger.error(f"❌ Unexpected error in parse_ad: {e}", exc_info=True)
         finally:
             await page.close()
+            await context.close()
 
     async def close_spider(self, spider):
         """Close Playwright after all"""
         self.logger.info("🛑 Closing Playwright...")
-        if self.context:
-            await self.context.close()
         if self.browser:
             await self.browser.close()
+            await self.playwright.stop()
 
     async def errback_close_page(self, failure) -> None:
-        """Handling errors during scraping"""
-        meta: Any = failure.request.meta
-        if "playwright_page" in meta:
-            page: Any = meta.get("page")
-            if not page:
-                self.logger.warning(f"No Playwright page found in meta for request {failure.request.url}. Unable to close.")
-                return
+        """Handling errors during scraping and closing Playwright resources properly"""
+        meta: Any = failure.request.meta if hasattr(failure.request, "meta") else {}
+
+        page = meta.get("page")
+        context = meta.get("context")
+
+        if not page and not context:
+            self.logger.warning(f"No Playwright page or context found in meta for request {failure.request.url}. Unable to close.")
+            return
+
+        if page:
             try:
                 self.logger.error(f"Error encountered: {failure}. Closing page for request {failure.request.url}")
                 await page.close()
                 self.logger.info(f"Page for {failure.request.url} closed successfully after exception.")
             except Exception as e:
                 self.logger.error(f"Failed to close page for {failure.request.url}: {e}")
+
+        if context:
+            try:
+                await context.close()
+                self.logger.info(f"Context closed successfully for request {failure.request.url}")
+            except Exception as e:
+                self.logger.error(f"Failed to close context for {failure.request.url}: {e}")
 
     def parse_date(self, input_str) -> str:
         """Parse a string with a date and returns it in the '15 січня 2025 р.' format."""

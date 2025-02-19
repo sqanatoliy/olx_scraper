@@ -81,6 +81,13 @@ class PostgresPipeline:
         except psycopg2.Error as e:
             spider.logger.error(f"❌ Error closing PostgreSQL connection: {e}")
 
+    def get_existing_urls(self):
+        """
+        Return set of URL, that exist in db.
+        """
+        self.cursor.execute("SELECT url FROM ads")
+        return {row[0] for row in self.cursor.fetchall()}
+
     def process_item(self, item, spider):
         try:
             adapter = ItemAdapter(item)

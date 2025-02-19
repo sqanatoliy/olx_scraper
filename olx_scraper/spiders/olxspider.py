@@ -13,6 +13,7 @@ from decouple import config
 from playwright.async_api import Browser, BrowserContext, Playwright, async_playwright, TimeoutError as PlaywrightTimeoutError
 
 from ..items import OlxScraperItem
+from ..pipelines import PostgresPipeline
 from ..utils.url_factory import UrlBuilderFactory
 from .playwright_helpers import (
     check_403_error,
@@ -137,6 +138,8 @@ class OlxSpider(scrapy.Spider):
         spider = super().from_crawler(crawler, *args, **kwargs)
         crawler.signals.connect(spider.open_spider, signal=signals.spider_opened)
         crawler.signals.connect(spider.close_spider, signal=signals.spider_closed)
+        # Зберігаємо crawler в атрибут spider щоб при потребі мати доступ до налаштувань
+        spider.crawler = crawler
 
         # # Start async Playwright
         # asyncio.ensure_future(spider.init_playwright())
@@ -176,6 +179,22 @@ class OlxSpider(scrapy.Spider):
 
     def parse(self, response: Response) -> Iterator[scrapy.Request]:
         """Get all urls"""
+
+        # Отримуємо доступ до pipeline через self.crawler
+        postgres_pipeline: PostgresPipeline | None = None
+        manager = self.crawler.engine.scraper.itemproc
+        for pipe in manager.middlewares:
+            if isinstance(pipe, PostgresPipeline):
+                postgres_pipeline = pipe
+                break
+
+        if not postgres_pipeline:
+            self.logger.error("❌ PostgresPipeline не знайдено!")
+            return
+
+        # Get list existing URL
+        existing_urls = postgres_pipeline.get_existing_urls()
+
         context = response.meta["context"]
         self.logger.info(f"Parsing response from {response.url}")
         ads_block: SelectorList = response.css(ADS_BLOCK_SELECTOR)
@@ -189,12 +208,17 @@ class OlxSpider(scrapy.Spider):
             )
             if not ad_link:
                 continue
-            ad_title: str | None = ad.css(AD_TITLE_SELECTOR).css("::text").get()
-            ad_price: str | None = ad.css(AD_PRICE_SELECTOR).css("::text").get()
+
             full_url: str = response.urljoin(ad_link)
             if "/d/uk/" not in full_url:
                 full_url = full_url.replace("/d/", "/d/uk/")
+            if full_url in existing_urls:
+                self.logger.info(f"⏩ URL вже в базі, пропускаємо: {full_url}")
+                continue
             self.logger.info(f"Collected URL: {full_url}")
+            ad_title: str | None = ad.css(AD_TITLE_SELECTOR).css("::text").get()
+            ad_price: str | None = ad.css(AD_PRICE_SELECTOR).css("::text").get()
+
             # Create Item and fill fields
             item: OlxScraperItem = OlxScraperItem()
             item["title"] = ad_title.strip()

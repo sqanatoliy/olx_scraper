@@ -32,7 +32,7 @@
 ## 📥 Створення нового проєкту
 ### 1️⃣ **Клонування репозиторію**
 ```bash
-git clone https://github.com/your-repository/olx_scraper.git
+git clone https://github.com/sqanatoliy/olx_scraper.git
 cd olx_scraper
 ```
 

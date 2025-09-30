@@ -40,4 +40,8 @@ class BaseUrlBuilder(ABC):
         """Generates a basic URL without subcategories"""
         self.set_page(page)
         base_url = urljoin(self.BASE_URL, self.category + "/")
-        return f"{base_url}?{urlencode(self.filters, doseq=True)}" if self.filters else base_url
+        return (
+            f"{base_url}?{urlencode(self.filters, doseq=True)}"
+            if self.filters
+            else base_url
+        )

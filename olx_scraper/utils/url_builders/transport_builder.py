@@ -118,13 +118,19 @@ class TransportUrlBuilder(BaseUrlBuilder):
         "moskvich_azlk": "moskvich_azlk",
         "raf": "raf",
         "uaz": "uaz",
-        "drugie": "drugie"
+        "drugie": "drugie",
     }
 
-    def __init__(self, subcategory_1=None, subcategory_2=None, location=None, filters_dict=None):
+    def __init__(
+        self, subcategory_1=None, subcategory_2=None, location=None, filters_dict=None
+    ):
         super().__init__("transport", filters_dict)
         self.transport_type = self.TRANSPORT_TYPES.get(subcategory_1)
-        self.transport_sub_category = self.SUB_CATEGORY_TRANSPORT.get(subcategory_2) if subcategory_1 == "legkovye-avtomobili" else None
+        self.transport_sub_category = (
+            self.SUB_CATEGORY_TRANSPORT.get(subcategory_2)
+            if subcategory_1 == "legkovye-avtomobili"
+            else None
+        )
         self.location = location
 
     def apply_default_filters(self):
@@ -159,16 +165,25 @@ class TransportUrlBuilder(BaseUrlBuilder):
 
         self.set_page(page)
 
-        return f"{base_url}?{urlencode(self.filters, doseq=True)}" if self.filters else base_url
+        return (
+            f"{base_url}?{urlencode(self.filters, doseq=True)}"
+            if self.filters
+            else base_url
+        )
 
 
 if __name__ == "__main__":
     builder = TransportUrlBuilder()
     builder1 = TransportUrlBuilder(subcategory_1="legkovye-avtomobili")
     builder2 = TransportUrlBuilder(
-        subcategory_1="legkovye-avtomobili", subcategory_2="acura", location="kiev", filters_dict={"q": "не бита"}
+        subcategory_1="legkovye-avtomobili",
+        subcategory_2="acura",
+        location="kiev",
+        filters_dict={"q": "не бита"},
     )
-    builder3 = TransportUrlBuilder(subcategory_1="legkovye-avtomobili", subcategory_2="acura")
+    builder3 = TransportUrlBuilder(
+        subcategory_1="legkovye-avtomobili", subcategory_2="acura"
+    )
     builder3.set_mileage_range("1000", "50000")
     print(builder.build_url(page=1))
     print(builder1.build_url(page=1))

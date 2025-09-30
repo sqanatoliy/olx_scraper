@@ -28,7 +28,7 @@ def parse_date(input_str) -> str:
     elif input_str.startswith("Онлайн в "):
         full_date: str = today.strftime(f"%d {months_uk[today.month]} %Y р.")
     elif input_str.startswith("Онлайн "):
-        input_str = input_str[len("Онлайн "):]
+        input_str = input_str[len("Онлайн ") :]
         match: re.Match[str] | None = re.match(
             r"(\d{1,2}) ([а-яіїє]+) (\d{4}) р\.", input_str
         )

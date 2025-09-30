@@ -3,14 +3,22 @@ import re
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Iterator, AsyncGenerator, Any
+from typing import Iterator, AsyncGenerator, Any, Optional
 
 import scrapy
 from scrapy import signals
-from scrapy.http import Response
+from scrapy.http.response import Response
 from scrapy.selector.unified import SelectorList
+from scrapy.crawler import Crawler
 from decouple import config
-from playwright.async_api import Browser, BrowserContext, Playwright, async_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.async_api import (
+    Browser,
+    BrowserContext,
+    Playwright,
+    async_playwright,
+    TimeoutError as PlaywrightTimeoutError,
+    ViewportSize,
+)
 
 from ..items import OlxScraperItem
 from ..pipelines import PostgresPipeline
@@ -19,7 +27,8 @@ from .playwright_helpers import (
     check_403_error,
     scroll_to_number_of_views,
     scroll_and_click_to_show_phone,
-    wait_for_number_of_views, login_olx,
+    wait_for_number_of_views,
+    login_olx,
 )
 
 
@@ -58,9 +67,7 @@ MAP_OVERLAY_SELECTOR = 'div[data-testid="qa-map-overlay-hidden"]'
 # Photo section
 BLOCK_WITH_PHOTO_SELECTOR = 'div[data-testid="ad-photo"]'
 # Description section
-AD_TAGS_SELECTOR = (
-    'div[data-testid="ad-promotion-actions"] + div[data-testid="qa-advert-slot"] + div > div'
-)
+AD_TAGS_SELECTOR = 'div[data-testid="ad-promotion-actions"] + div[data-testid="qa-advert-slot"] + div > div'
 DESCRIPTION_PARTS_SELECTOR = 'div[data-cy="ad_description"] > div'
 # Description section footer
 FOOTER_BAR_SELECTOR = 'div[data-testid="ad-footer-bar-section"]'
@@ -75,7 +82,16 @@ class OlxSpider(scrapy.Spider):
     allowed_domains: list[str] = ["olx.ua"]
 
     def __init__(
-            self, category="list", location=None, subcategory_1=None, subcategory_2=None, filters=None, start_page=None, end_page=None, *args, **kwargs
+        self,
+        category="list",
+        location=None,
+        subcategory_1=None,
+        subcategory_2=None,
+        filters=None,
+        start_page=None,
+        end_page=None,
+        *args,
+        **kwargs,
     ):
         """
         :param category: Основна категорія OLX (list, nedvizhimost, transport).
@@ -97,7 +113,7 @@ class OlxSpider(scrapy.Spider):
                 location=location,
                 subcategory_1=subcategory_1,
                 subcategory_2=subcategory_2,
-                filters_dict=self.filters_dict
+                filters_dict=self.filters_dict,
             )
         except ValueError as e:
             self.logger.error(f"❌ Помилка у фабриці генерації URL: {e}")
@@ -107,13 +123,15 @@ class OlxSpider(scrapy.Spider):
         self.context = None
         self.playwright = None
 
-    async def open_spider(self, spider):
-        """Start Playwright """
+    async def open_spider(self, spider: scrapy.Spider):
+        """Start Playwright"""
         self.logger.info("🚀 Starting Playwright...")
         # get PLAYWRIGHT_LAUNCH_OPTIONS from settings.py
         self.playwright: Playwright = await async_playwright().start()
         launch_options = spider.settings.getdict("PLAYWRIGHT_LAUNCH_OPTIONS")
-        self.browser: Browser = await self.playwright.chromium.launch(**launch_options, )
+        self.browser: Browser = await self.playwright.chromium.launch(
+            **launch_options,
+        )
         self.context: BrowserContext = await self.browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             viewport={"width": 1920, "height": 1080},
@@ -124,13 +142,15 @@ class OlxSpider(scrapy.Spider):
                 "Accept-Language": "uk-UA,uk;q=0.9",
                 "Referer": f"{OLX_URL}",
             },
-            storage_state=storage_state_path
+            storage_state=storage_state_path,
         )
         await login_olx(self.context, OLX_URL, OLX_EMAIL, OLX_PASSWORD, self)
         if self.context:
             self.logger.info("✅ Playwright started successfully!")
         else:
-            self.logger.error("❌ Error Playwright! self.context or self.browser = None")
+            self.logger.error(
+                "❌ Error Playwright! self.context or self.browser = None"
+            )
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
@@ -145,11 +165,18 @@ class OlxSpider(scrapy.Spider):
         # asyncio.ensure_future(spider.init_playwright())
 
         # Отримуємо `start_page` і `end_page` з `settings.py`, якщо вони не передані через Scrapy
-        spider.start_page = int(kwargs.get("start_page", crawler.settings.getint("START_PAGE", 1)))
-        spider.end_page = int(kwargs.get("end_page", crawler.settings.getint("END_PAGE", 1)))
+        spider.start_page = int(
+            kwargs.get("start_page", crawler.settings.getint("START_PAGE", 1))
+        )
+        spider.end_page = int(
+            kwargs.get("end_page", crawler.settings.getint("END_PAGE", 1))
+        )
 
         # Створюємо `start_urls` тільки після оновлення `start_page` та `end_page`
-        spider.start_urls = [spider.url_builder.build_url(page=i) for i in range(spider.start_page, spider.end_page + 1)]
+        spider.start_urls = [
+            spider.url_builder.build_url(page=i)  # type: ignore
+            for i in range(spider.start_page, spider.end_page + 1)
+        ]
 
         return spider
 
@@ -171,9 +198,7 @@ class OlxSpider(scrapy.Spider):
             yield scrapy.Request(
                 url=url,
                 callback=self.parse,
-                meta={
-                    "context": self.context
-                },
+                meta={"context": self.context},
                 errback=self.errback_close_page,
             )
 
@@ -227,14 +252,12 @@ class OlxSpider(scrapy.Spider):
             yield scrapy.Request(
                 url=full_url,
                 callback=self.parse_ad,
-                meta={
-                    "item": item, "context": context
-                },
+                meta={"item": item, "context": context},
                 errback=self.errback_close_page,
             )
 
     async def parse_ad(
-            self, response: Response
+        self, response: Response
     ) -> AsyncGenerator[OlxScraperItem, None]:
         """Processing the detailed page of the ad"""
         context = response.meta["context"]
@@ -249,7 +272,13 @@ class OlxSpider(scrapy.Spider):
             item: OlxScraperItem = response.meta["item"]
 
             await check_403_error(page, response.url, self)
-            await scroll_to_number_of_views(page, FOOTER_BAR_SELECTOR, USER_NAME_SELECTOR, DESCRIPTION_PARTS_SELECTOR, self)
+            await scroll_to_number_of_views(
+                page,
+                FOOTER_BAR_SELECTOR,
+                USER_NAME_SELECTOR,
+                DESCRIPTION_PARTS_SELECTOR,
+                self,
+            )
             await wait_for_number_of_views(page, AD_VIEW_COUNTER_SELECTOR, self)
 
             # -- ⬇️ Using variables to improve readability ⬇️ --
@@ -282,14 +311,20 @@ class OlxSpider(scrapy.Spider):
             # Location
             map_overlay = page.locator(MAP_OVERLAY_SELECTOR)
             location_section = map_overlay.locator("..")
-            location_parts = await location_section.locator("svg + div *").all_text_contents()
+            location_parts = await location_section.locator(
+                "svg + div *"
+            ).all_text_contents()
             location = " ".join(loc.strip() for loc in location_parts if loc)
 
             # Extracting images
             block_with_locator = page.locator(BLOCK_WITH_PHOTO_SELECTOR)
             if await block_with_locator.first.is_visible(timeout=1_000):
                 img_elements = await block_with_locator.locator("img").all()
-                img_urls_list = [await img.get_attribute("src") for img in img_elements if await img.get_attribute("src")]
+                img_urls_list = [
+                    await img.get_attribute("src")
+                    for img in img_elements
+                    if await img.get_attribute("src")
+                ]
             else:
                 img_urls_list = ["Ad does not have photos"]
 
@@ -301,7 +336,9 @@ class OlxSpider(scrapy.Spider):
                 else ["Ad doesnt have tags"]
             )
 
-            description_parts = await page.locator(DESCRIPTION_PARTS_SELECTOR).all_text_contents()
+            description_parts = await page.locator(
+                DESCRIPTION_PARTS_SELECTOR
+            ).all_text_contents()
             description = " ".join(part.strip() for part in description_parts if part)
 
             # Extracting ad ID and view counter
@@ -336,7 +373,9 @@ class OlxSpider(scrapy.Spider):
                 CONTACT_PHONE_SELECTOR,
                 self,
             )
-            self.logger.info(f"✅ Loaded {response.url} in {time.time() - start_time:.2f}s")
+            self.logger.info(
+                f"✅ Loaded {response.url} in {time.time() - start_time:.2f}s"
+            )
             phone_number = (
                 await contact_phone_locator.first.text_content()
                 if await contact_phone_locator.first.is_visible(timeout=2000)
@@ -362,20 +401,28 @@ class OlxSpider(scrapy.Spider):
         if self.browser:
             await self.browser.close()
 
-    async def errback_close_page(self, failure) -> None:
+    async def errback_close_page(self, failure: scrapy.Request) -> None:
         """Handling errors during scraping"""
         meta: Any = failure.request.meta
         if "playwright_page" in meta:
             page: Any = meta.get("page")
             if not page:
-                self.logger.warning(f"No Playwright page found in meta for request {failure.request.url}. Unable to close.")
+                self.logger.warning(
+                    f"No Playwright page found in meta for request {failure.request.url}. Unable to close."
+                )
                 return
             try:
-                self.logger.error(f"Error encountered: {failure}. Closing page for request {failure.request.url}")
+                self.logger.error(
+                    f"Error encountered: {failure}. Closing page for request {failure.request.url}"
+                )
                 await page.close()
-                self.logger.info(f"Page for {failure.request.url} closed successfully after exception.")
+                self.logger.info(
+                    f"Page for {failure.request.url} closed successfully after exception."
+                )
             except Exception as e:
-                self.logger.error(f"Failed to close page for {failure.request.url}: {e}")
+                self.logger.error(
+                    f"Failed to close page for {failure.request.url}: {e}"
+                )
 
     def parse_date(self, input_str) -> str:
         """Parse a string with a date and returns it in the '15 січня 2025 р.' format."""
@@ -404,7 +451,7 @@ class OlxSpider(scrapy.Spider):
         elif input_str.startswith("Онлайн в "):
             full_date: str = today.strftime(f"%d {months_uk[today.month]} %Y р.")
         elif input_str.startswith("Онлайн "):
-            input_str = input_str[len("Онлайн "):]
+            input_str = input_str[len("Онлайн ") :]
             match: re.Match[str] | None = re.match(
                 r"(\d{1,2}) ([а-яіїє]+) (\d{4}) р.", input_str
             )

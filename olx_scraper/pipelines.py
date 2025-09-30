@@ -8,7 +8,6 @@
 from itemadapter import ItemAdapter
 
 import psycopg2
-from itemadapter import ItemAdapter
 
 
 class OlxScraperPipeline:
@@ -41,7 +40,7 @@ class PostgresPipeline:
                 host=self.postgres_uri,
                 dbname=self.postgres_db,
                 user=self.postgres_user,
-                password=self.postgres_password
+                password=self.postgres_password,
             )
             self.cursor = self.conn.cursor()
             # Create table if it doesn't exist
@@ -92,46 +91,56 @@ class PostgresPipeline:
         try:
             adapter = ItemAdapter(item)
 
-            ad_id = adapter.get('ad_id')
+            ad_id = adapter.get("ad_id")
             if not ad_id:
-                spider.logger.warning("⚠️ Item does not have a valid ad_id. Skipping insert.")
+                spider.logger.warning(
+                    "⚠️ Item does not have a valid ad_id. Skipping insert."
+                )
                 return item
 
             # Checking if the ad_id is in the database
-            self.cursor.execute("SELECT EXISTS(SELECT 1 FROM ads WHERE ad_id = %s)", (ad_id,))
+            self.cursor.execute(
+                "SELECT EXISTS(SELECT 1 FROM ads WHERE ad_id = %s)", (ad_id,)
+            )
             if self.cursor.fetchone()[0]:
-                spider.logger.info(f"🔄 Item with ID {ad_id} already exists. Skipping insert.")
+                spider.logger.info(
+                    f"🔄 Item with ID {ad_id} already exists. Skipping insert."
+                )
                 return item
 
             data = (
-                adapter.get('ad_id') or 'unknown',
-                adapter.get('title') or 'No Title',
-                adapter.get('price') or '0',
-                adapter.get('user_name') or 'Anonymous',
-                adapter.get('phone_number') or 'N/A',
-                adapter.get('user_score') or 'N/A',
-                adapter.get('user_registration') or 'Unknown',
-                adapter.get('user_last_seen') or 'Unknown',
-                adapter.get('ad_view_counter') or '0',
-                adapter.get('location') or 'Unknown',
-                adapter.get('ad_pub_date') or 'Unknown',
-                adapter.get('url'),
-                adapter.get('description') or 'No Description',
-                adapter.get('ad_tags') or [],
-                adapter.get('img_src_list') or [],
-
+                adapter.get("ad_id") or "unknown",
+                adapter.get("title") or "No Title",
+                adapter.get("price") or "0",
+                adapter.get("user_name") or "Anonymous",
+                adapter.get("phone_number") or "N/A",
+                adapter.get("user_score") or "N/A",
+                adapter.get("user_registration") or "Unknown",
+                adapter.get("user_last_seen") or "Unknown",
+                adapter.get("ad_view_counter") or "0",
+                adapter.get("location") or "Unknown",
+                adapter.get("ad_pub_date") or "Unknown",
+                adapter.get("url"),
+                adapter.get("description") or "No Description",
+                adapter.get("ad_tags") or [],
+                adapter.get("img_src_list") or [],
             )
 
             # Efficiently insert data using execute_values
-            self.cursor.execute("""
+            self.cursor.execute(
+                """
             INSERT INTO ads (ad_id, title, price, user_name, phone_number, user_score, user_registration, 
                              user_last_seen, ad_view_counter, location, ad_pub_date, url, description, ad_tags, img_src_list)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (ad_id) DO NOTHING
-            """, data)
+            """,
+                data,
+            )
 
             self.conn.commit()
-            spider.logger.info(f"✅ Item with ID {adapter.get('ad_id')} saved successfully.")
+            spider.logger.info(
+                f"✅ Item with ID {adapter.get('ad_id')} saved successfully."
+            )
             return item
 
         except psycopg2.Error as e:

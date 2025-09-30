@@ -86,7 +86,9 @@ logger = logging.getLogger()
 
 # Remove existing FileHandlers to avoid duplicates
 logger.handlers = [
-    handler for handler in logger.handlers if not isinstance(handler, logging.FileHandler)
+    handler
+    for handler in logger.handlers
+    if not isinstance(handler, logging.FileHandler)
 ]
 
 logger.setLevel(LOG_LEVEL)
@@ -99,12 +101,16 @@ formatter = logging.Formatter(
     "%(asctime)s [%(levelname)s] %(name)s [%(funcName)s]: %(message)s"
 )
 rotating_handler.setFormatter(formatter)
-rotating_handler.setLevel(logging.INFO)  # Setting the logging level (if different from general)
+rotating_handler.setLevel(
+    logging.INFO
+)  # Setting the logging level (if different from general)
 logger.addHandler(rotating_handler)  # Adding a handler to the logger
 
 # Console Handler (Logs to terminal)
 if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
     console_handler = logging.StreamHandler()
-    console_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s"))
+    console_handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s")
+    )
     console_handler.setLevel(logging.INFO)
     logger.addHandler(console_handler)

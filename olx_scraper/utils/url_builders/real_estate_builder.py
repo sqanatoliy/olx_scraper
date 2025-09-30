@@ -24,23 +24,18 @@ class RealEstateUrlBuilder(BaseUrlBuilder):
     DEAL_TYPES = {
         "prodazha-kvartir": "prodazha-kvartir",
         "arenda-kvartir": "dolgosrochnaya-arenda-kvartir",
-
         "prodazha-komnat": "prodazha-komnat",
         "arenda-komnat": "dolgosrochnaya-arenda-komnat",
-
         "prodazha-domov": "prodazha-domov",
         "arenda-domov": "arenda-domov",
-
         "posutochno-doma": "posutochno-pochasovo-doma",
         "posutochno-kvartiry": "posutochno-pochasovo-kvartiry",
         "posutochno-komnaty": "posutochno-pochasovo-komnaty",
         "posutochno-oteli": "posutochno-pochasovo-oteli",
         "posutochno-khostely": "posutochno-pochasovo-khostely",
         "posutochno-predlozheniya-turoperatorov": "predlozheniya-turoperatorov",
-
         "arenda-zemli": "arenda-zemli",
         "prodazha-zemli": "prodazha-zemli",
-
         "prodazha-kommercheskoy-nedvizhimosti": "prodazha-kommercheskoy-nedvizhimosti",
         "arenda-kommercheskoy-nedvizhimosti": "arenda-kommercheskoy-nedvizhimosti",
         "kovorkingi": "kovorkingi",
@@ -48,15 +43,21 @@ class RealEstateUrlBuilder(BaseUrlBuilder):
         "prodazha-garazhey-parkovok": "prodazha-garazhey-parkovok",
     }
 
-    def __init__(self, subcategory_1=None, subcategory_2=None, location=None, filters_dict=None):
+    def __init__(
+        self, subcategory_1=None, subcategory_2=None, location=None, filters_dict=None
+    ):
         """
         :param subcategory_1: Тип нерухомості (kvartiry, doma, garazhi, тощо).
         :param subcategory_2: Тип угоди (prodazha або arenda).
         :param location: Локація (наприклад, 'ivano-frankovsk').
         """
         super().__init__("nedvizhimost", filters_dict)
-        self.property_type = self.PROPERTY_TYPES.get(subcategory_1)  # Може бути `None`, якщо не вказано
-        self.deal_type = self.DEAL_TYPES.get(subcategory_2)  # Може бути `None`, якщо не вказано
+        self.property_type = self.PROPERTY_TYPES.get(
+            subcategory_1
+        )  # Може бути `None`, якщо не вказано
+        self.deal_type = self.DEAL_TYPES.get(
+            subcategory_2
+        )  # Може бути `None`, якщо не вказано
         self.location = location
 
     def apply_default_filters(self):
@@ -94,10 +95,18 @@ class RealEstateUrlBuilder(BaseUrlBuilder):
 
         self.set_page(page)
 
-        return f"{base_url}?{urlencode(self.filters, doseq=True)}" if self.filters else base_url
+        return (
+            f"{base_url}?{urlencode(self.filters, doseq=True)}"
+            if self.filters
+            else base_url
+        )
 
 
 if __name__ == "__main__":
-
-    builder = RealEstateUrlBuilder(subcategory_1="posutochno", subcategory_2="posutochno-kvartiry", location="kiev", filters_dict={"q": "з опаленням"})
+    builder = RealEstateUrlBuilder(
+        subcategory_1="posutochno",
+        subcategory_2="posutochno-kvartiry",
+        location="kiev",
+        filters_dict={"q": "з опаленням"},
+    )
     print(builder.build_url(page=1))

@@ -25,4 +25,3 @@ class OlxScraperItem(scrapy.Item):
     description = scrapy.Field()
     ad_tags = scrapy.Field()
     img_src_list = scrapy.Field()
-

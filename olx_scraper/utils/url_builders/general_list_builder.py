@@ -29,10 +29,18 @@ class GeneralListUrlBuilder(BaseUrlBuilder):
         Generates a URL for the list of ads with filters and a keyword in the correct format.
         """
         # Base URL (depends on location availability)
-        base_url = f"{self.BASE_URL}{self.location}/" if self.location else self.BASE_URL + self.category + "/"
+        base_url = (
+            f"{self.BASE_URL}{self.location}/"
+            if self.location
+            else self.BASE_URL + self.category + "/"
+        )
         base_url += self.format_keyword()
         self.set_page(page)
-        return f"{base_url}?{urlencode(self.filters, doseq=True)}" if self.filters else base_url
+        return (
+            f"{base_url}?{urlencode(self.filters, doseq=True)}"
+            if self.filters
+            else base_url
+        )
 
 
 if __name__ == "__main__":

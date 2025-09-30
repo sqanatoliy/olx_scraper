@@ -3,6 +3,7 @@
 Містить допоміжні функції для перевірки помилки 403,
 паузи виконання скрипта, скролінгу та кліків на елементах сторінки.
 """
+
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -25,7 +26,9 @@ STATE_FILE = PROJECT_ROOT / "state.json"
 storage_state_path = str(STATE_FILE) if STATE_FILE.exists() else None
 
 
-async def check_403_error(page: Page, ad_link: str, spider: scrapy.Spider, timeout: int = 30_000) -> None:
+async def check_403_error(
+    page: Page, ad_link: str, spider: scrapy.Spider, timeout: int = 30_000
+) -> None:
     """
     Перевіряє сторінку на наявність помилки 403 від CloudFront.
 
@@ -43,7 +46,10 @@ async def check_403_error(page: Page, ad_link: str, spider: scrapy.Spider, timeo
     """
     if await page.locator("h1", has_text="403 ERROR").count() > 0:
         print(f"===== Attention Blocked by CloudFront !!! URL: {ad_link} =====")
-        spider.logger.warning(f"===== Attention 403 ERROR detected. Blocked by CloudFront Next request in {timeout} seconds URL: %s =====", ad_link)
+        spider.logger.warning(
+            f"===== Attention 403 ERROR detected. Blocked by CloudFront Next request in {timeout} seconds URL: %s =====",
+            ad_link,
+        )
         await page.wait_for_timeout(timeout)
         await page.close()
         raise f"===== Blocked by CloudFront. URL: {ad_link} ====="
@@ -63,11 +69,11 @@ async def page_pause(page: Page, spider: scrapy.Spider) -> None:
 
 
 async def scroll_to_number_of_views(
-        page: Page,
-        footer_bar_selector: str,
-        user_name_selector: str,
-        description_parts_selector: str,
-        spider: scrapy.Spider
+    page: Page,
+    footer_bar_selector: str,
+    user_name_selector: str,
+    description_parts_selector: str,
+    spider: scrapy.Spider,
 ) -> None:
     """
     Скролить сторінку до певних елементів, що містять інформацію (наприклад, кількість переглядів).
@@ -88,28 +94,29 @@ async def scroll_to_number_of_views(
     try:
         await page.wait_for_selector(footer_bar_selector, timeout=10_000)
     except PlaywrightTimeoutError as err:
-        spider.logger.error(
-            "=== Footer bar selector it's not displayed: %s ===", err)
+        spider.logger.error("=== Footer bar selector it's not displayed: %s ===", err)
         await page.close()
         return
     try:
         spider.logger.info(
             "-----===== Start to scrolling into Number of Views =====-----"
         )
-        await page.locator(footer_bar_selector).scroll_into_view_if_needed(timeout=2_000)
+        await page.locator(footer_bar_selector).scroll_into_view_if_needed(
+            timeout=2_000
+        )
         await page.locator(user_name_selector).first.wait_for(timeout=5_000)
         await page.locator(description_parts_selector).wait_for(timeout=5_000)
-        spider.logger.info(
-            "-----===== Page should have loaded =====-----"
-        )
+        spider.logger.info("-----===== Page should have loaded =====-----")
     except PlaywrightTimeoutError as err:
-        spider.logger.error("=== Failed to get elements User Name, Description: %s ===", err)
+        spider.logger.error(
+            "=== Failed to get elements User Name, Description: %s ===", err
+        )
 
 
 async def wait_for_number_of_views(
-        page: Page,
-        ad_view_counter_selector: str,
-        spider: scrapy.Spider,
+    page: Page,
+    ad_view_counter_selector: str,
+    spider: scrapy.Spider,
 ) -> None:
     """
     Очікує на відображення кількості переглядів.
@@ -125,17 +132,19 @@ async def wait_for_number_of_views(
         await page.wait_for_selector(ad_view_counter_selector, timeout=3_000)
     except PlaywrightTimeoutError as err:
         spider.logger.warning(
-            "=== The expectation for the number of views was not successful: %s ===", err)
+            "=== The expectation for the number of views was not successful: %s ===",
+            err,
+        )
         return
     spider.logger.info("=== Number of views received ===")
     return
 
 
 async def scroll_and_click_to_show_phone(
-        page: Page,
-        btn_show_phone_selector: str,
-        contact_phone_selector: str,
-        spider: scrapy.Spider,
+    page: Page,
+    btn_show_phone_selector: str,
+    contact_phone_selector: str,
+    spider: scrapy.Spider,
 ) -> None:
     """
     Скролить сторінку до кнопки "Показати телефон" та виконує клік по ній.
@@ -158,7 +167,9 @@ async def scroll_and_click_to_show_phone(
         spider.logger.info("=== Start to scrolling into show phone button ===")
         await page.locator(btn_show_phone_selector).wait_for(timeout=2_000)
     except PlaywrightTimeoutError as err:
-        spider.logger.warning("===The 'Show phone' button is not displayed: %s ===", err)
+        spider.logger.warning(
+            "===The 'Show phone' button is not displayed: %s ===", err
+        )
         return
     await page.locator(btn_show_phone_selector).scroll_into_view_if_needed(
         timeout=2_000
@@ -171,12 +182,14 @@ async def scroll_and_click_to_show_phone(
         spider.logger.info("=== The phone has been displayed successfully ===")
     except PlaywrightTimeoutError:
         spider.logger.warning(
-            "=== Phone did not display successfully after clicking the 'Show Phone' button ===")
+            "=== Phone did not display successfully after clicking the 'Show Phone' button ==="
+        )
         return
     return
 
 
 # LOGIN OLX
+
 
 # this context for authentication testing
 @asynccontextmanager
@@ -193,7 +206,7 @@ async def new_context():
                 "--disable-gpu",
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
-            ]
+            ],
         )
         context: BrowserContext = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -214,10 +227,11 @@ async def new_context():
 
 
 async def login_olx(
-        context: BrowserContext,
-        olx_url: str,
-        olx_email: str, olx_password: str,
-        spider: scrapy.Spider = None,
+    context: BrowserContext,
+    olx_url: str,
+    olx_email: str,
+    olx_password: str,
+    spider: scrapy.Spider = None,
 ) -> None:
     """Logs in to OLX using Playwright and saves the session"""
     page = await context.new_page()
@@ -232,16 +246,17 @@ async def login_olx(
         else:
             print("✅ Авторизація успішно виконана з state.json файлу!")
     except PlaywrightTimeoutError:
-
         try:
             await page.click('a[data-cy="myolx-link"]')
-            await page.locator('#username').press_sequentially(olx_email, delay=100)
-            await page.locator('#password').press_sequentially(olx_password, delay=100)
+            await page.locator("#username").press_sequentially(olx_email, delay=100)
+            await page.locator("#password").press_sequentially(olx_password, delay=100)
             await page.click('button[data-testid="login-submit-button"]')
 
             await user_button.wait_for(state="attached", timeout=10_000)
             if spider:
-                spider.logger.info("✅ Авторизація успішно виконана через форму авторизації!")
+                spider.logger.info(
+                    "✅ Авторизація успішно виконана через форму авторизації!"
+                )
             else:
                 print("✅ Авторизація успішно виконана через форму авторизації!")
 
